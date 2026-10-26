@@ -165,6 +165,7 @@ def build_status() -> dict:
         "name": "Apple", "sub": apple_sub(cfg("STORE_FILTER", "Dresden")),
         "updated": fmt_time(apple.get("last_ok")),
         "error": apple.get("last_error"), "errors": apple.get("errors", 0),
+        "pause": fmt_time(apple.get("block_until")) if apple.get("block_until", 0) > datetime.now().timestamp() else None,
         "cells": cells,
     })
 
@@ -412,20 +413,45 @@ DE_ANCHORS = ["01067", "04109", "10117", "20095", "30159", "40212", "50667",
 
 def discover_apple_stores() -> list[dict]:
     """Fragt Apple von mehreren PLZ aus ab und sammelt alle Stores (Name, Stadt, PLZ)."""
+    import time as _t
+    import urllib.error
     import urllib.parse
     import urllib.request
-    part = (read_json("state.json").get("parts") or ["MK2E4ZD/A"])[0]
+    apple_state = read_json("state.json")
+    if apple_state.get("block_until", 0) > _t.time():
+        raise ValueError("Apple pausiert gerade wegen einer Sperre (bis "
+                         f"{fmt_time(apple_state['block_until'])}). Store-Liste bitte später laden.")
+    part = (apple_state.get("parts") or ["MK2E4ZD/A"])[0]
+    try:
+        from curl_cffi import requests as cffi
+        sess = cffi.Session(impersonate="chrome")
+    except Exception:
+        sess = None
+    hdrs = {"Accept": "application/json", "Accept-Language": "de-DE,de;q=0.9",
+            "Referer": "https://www.apple.com/de/shop/buy-iphone/iphone-duo"}
     stores = {}
-    for plz in DE_ANCHORS:
+    for i, plz in enumerate(DE_ANCHORS):
+        if i:
+            _t.sleep(1.5)   # schonend: nicht alle Anfragen auf einmal
         url = "https://www.apple.com/de/shop/retail/pickup-message?" + urllib.parse.urlencode(
             {"pl": "true", "location": plz, "parts.0": part})
-        req = urllib.request.Request(url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
-            "Accept": "application/json", "Accept-Language": "de-DE,de;q=0.9",
-            "Referer": "https://www.apple.com/de/shop/buy-iphone/iphone-duo"})
         try:
-            with urllib.request.urlopen(req, timeout=15) as r:
-                data = json.loads(r.read().decode("utf-8"))
+            if sess is not None:
+                r = sess.get(url, headers=hdrs, timeout=15)
+                if r.status_code != 200:
+                    raise urllib.error.HTTPError(url, r.status_code, "", None, None)
+                data = json.loads(r.text)
+            else:
+                req = urllib.request.Request(url, headers={**hdrs, "User-Agent":
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"})
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    data = json.loads(r.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 429, 503, 541):
+                if stores:
+                    break   # Teilergebnis behalten, nicht weiter anfragen
+                raise ValueError(f"Apple weist die Anfrage ab (HTTP {e.code}). Bitte später erneut versuchen.")
+            continue
         except Exception:
             continue
         for st in (data.get("body") or {}).get("stores") or []:
@@ -650,7 +676,7 @@ async function post(path){
 let stores=[];
 function renderStores(sel){
   const all=$("a_all").checked;
-  if(!stores.length){$("a_list").innerHTML="";$("a_hint").textContent="Noch keine Store-Liste – einmal „Store-Liste von Apple laden“ drücken (dauert ca. 15 s).";return}
+  if(!stores.length){$("a_list").innerHTML="";$("a_hint").textContent="Noch keine Store-Liste – einmal „Store-Liste von Apple laden“ drücken (dauert ca. 30 s, bitte nicht oft wiederholen).";return}
   $("a_hint").textContent=stores.length+" Stores bekannt."+(all?" Bei „Alle Stores“ wird ganz Deutschland abgefragt.":"");
   $("a_list").innerHTML=stores.map(x=>`<label class="chk"><input type="checkbox" class="a_store" value="${esc(x.number)}" ${sel.has(x.name)?"checked":""} ${all?"disabled":""}> ${esc(x.city)} – ${esc(x.name)}</label>`).join("");
 }
@@ -675,7 +701,7 @@ async function send(path,obj,reload=true){
 }
 $("a_all").onchange=()=>renderStores(new Set([...document.querySelectorAll(".a_store:checked")].map(c=>stores.find(x=>x.number===c.value)?.name)));
 $("a_load").onclick=async()=>{
-  $("a_load").disabled=true;const busy=toast("Frage Apple nach allen Stores … (ca. 15 Sekunden)","info",0);
+  $("a_load").disabled=true;const busy=toast("Frage Apple nach allen Stores … (ca. 30 Sekunden)","info",0);
   const r=await fetch("api/apple-discover",{method:"POST"});
   busy();
   if(r.ok){stores=await r.json();toast(stores.length+" Apple Stores gefunden – jetzt auswählen und speichern.","ok");

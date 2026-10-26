@@ -83,15 +83,38 @@ OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIES)
 _page_cache: str | None = None
 
 
+try:
+    from curl_cffi import requests as _cffi   # Browser-Fingerabdruck von Chrome (auf dem Pi installiert)
+    _SESSION = _cffi.Session(impersonate="chrome")
+except Exception:
+    _SESSION = None
+
+# Antworten, die auf Sperre/Drosselung durch Apple hindeuten
+BLOCK_CODES = {403, 429, 503, 541}
+BLOCK_STEPS_MIN = [15, 30, 60, 120, 240]
+
+
+class AppleBlocked(Exception):
+    pass
+
+
 def http_get(url: str, accept: str, referer: str | None = None, xhr: bool = False) -> str:
-    headers = dict(HEADERS)
+    headers = {} if _SESSION is not None else dict(HEADERS)
     headers["Accept"] = accept
+    headers["Accept-Language"] = HEADERS["Accept-Language"]
     if referer:
         headers["Referer"] = referer
     if xhr:
         headers["X-Requested-With"] = "XMLHttpRequest"
         headers["Sec-Fetch-Mode"] = "cors"
         headers["Sec-Fetch-Site"] = "same-origin"
+        headers["Sec-Fetch-Dest"] = "empty"
+    if _SESSION is not None:
+        r = _SESSION.get(url, headers=headers, timeout=20)
+        if r.status_code != 200:
+            log(f"HTTP {r.status_code} für {url.split('?')[0]} – Antwort: {r.text[:300]!r}")
+            raise urllib.error.HTTPError(url, r.status_code, r.reason or "Fehler", None, None)
+        return r.text
     req = urllib.request.Request(url, headers=headers)
     try:
         with OPENER.open(req, timeout=20) as resp:
@@ -238,10 +261,15 @@ def find_variant(state: dict, parts: list[str]):
             log(f"Variante {v[0]}: nur {len(got)}/{len(batch)} Teile in der Antwort.")
         except urllib.error.HTTPError as e:
             errors.append(f"{v[0]}: HTTP {e.code}")
+            if v[0] == saved and e.code in BLOCK_CODES:
+                # Die bisher funktionierende Abfrage wird abgewiesen -> Sperre, nicht weiter probieren
+                raise AppleBlocked(f"HTTP {e.code} bei der bisher funktionierenden Abfrage ({v[0]})")
         except Exception as e:
             errors.append(f"{v[0]}: {e}")
             log(f"Variante {v[0]} fehlgeschlagen: {e}")
         time.sleep(REQUEST_PAUSE)
+    if errors and all(any(f"HTTP {c}" in x for c in BLOCK_CODES) for x in errors):
+        raise AppleBlocked("Alle Abfragen abgewiesen – " + "; ".join(errors))
     raise RuntimeError("Keine Abfragevariante funktioniert – " + "; ".join(errors))
 
 
@@ -301,15 +329,16 @@ def main() -> int:
         push("Test: iPhone-Duo-Wächter", "Wenn du das liest, kommen die Push-Nachrichten an. 👍",
              priority=3, tags=["white_check_mark"])
 
+    if os.getenv("FORCE") != "1" and time.time() < state.get("block_until", 0):
+        until = datetime.fromtimestamp(state["block_until"], TZ).strftime("%H:%M")
+        log(f"Apple: Pause wegen Sperre/Drosselung bis {until} Uhr – übersprungen.")
+        save_state(state)
+        return 0
+
     try:
         parts = get_parts(state)
         if not parts:
             raise RuntimeError("Keine Teilenummern bekannt (Produktseite nicht lesbar und PARTS nicht gesetzt).")
-
-        try:
-            product_page()  # Session-Cookies holen, wie ein echter Browser
-        except Exception as e:
-            log(f"Produktseite nicht ladbar (weiter ohne Cookies): {e}")
 
         variant, first = find_variant(state, parts)
         size = variant[3]
@@ -377,11 +406,37 @@ def main() -> int:
         state["errors"] = 0
         state["last_ok"] = datetime.now(timezone.utc).isoformat()
 
+    except AppleBlocked as e:
+        return handle_block(state, str(e))
     except urllib.error.HTTPError as e:
         return handle_error(state, f"HTTP {e.code} von Apple ({e.reason})")
     except Exception as e:
         return handle_error(state, str(e))
 
+    if state.get("block_level"):
+        log("Apple antwortet wieder normal – Sperre aufgehoben.")
+        push("✅ Apple wieder erreichbar", "Die Abfragen bei Apple funktionieren wieder.", priority=2, tags=["white_check_mark"])
+    state["block_level"] = 0
+    state["block_until"] = 0
+    save_state(state)
+    return 0
+
+
+def handle_block(state: dict, msg: str) -> int:
+    """Apple weist ab: wachsende Pause statt weiter anzufragen (verschärft die Sperre sonst nur)."""
+    level = state.get("block_level", 0)
+    minutes = BLOCK_STEPS_MIN[min(level, len(BLOCK_STEPS_MIN) - 1)]
+    state["block_level"] = level + 1
+    state["block_until"] = time.time() + minutes * 60
+    state["last_error"] = f"Apple sperrt/drosselt – Pause {minutes} Min. ({msg})"
+    state["last_error_at"] = datetime.now(timezone.utc).isoformat()
+    until = datetime.fromtimestamp(state["block_until"], TZ).strftime("%H:%M")
+    log(f"SPERRE: {msg} – pausiere Apple {minutes} Minuten (bis {until} Uhr).")
+    if level == 0:
+        push("⏸️ Apple drosselt die Abfragen",
+             f"Apple weist die Abfragen gerade ab. Der Wächter pausiert Apple bis {until} Uhr und "
+             f"versucht es dann mit wachsendem Abstand erneut. MediaMarkt, Saturn und Cyberport laufen weiter.",
+             priority=2, tags=["pause_button"])
     save_state(state)
     return 0
 
@@ -418,7 +473,7 @@ def handle_error(state: dict, msg: str) -> int:
     # einmal nach ERROR_ALERT_AFTER Fehlern warnen, danach etwa einmal täglich (alle 192 Läufe)
     if n == ERROR_ALERT_AFTER or (n > ERROR_ALERT_AFTER and n % 192 == 0):
         push("⚠️ iPhone-Duo-Wächter hat Probleme",
-             f"{n} Fehlläufe in Folge. Letzter Fehler: {msg}\nBitte Log in GitHub Actions ansehen.",
+             f"{n} Fehlläufe in Folge. Letzter Fehler: {msg}\nDetails im Dashboard bzw. im Log.",
              priority=3, tags=["warning"])
     save_state(state)
     return 1 if DEBUG else 0  # im Normalbetrieb den Workflow nicht rot färben
