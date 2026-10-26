@@ -39,9 +39,24 @@ jobs:
           LOCATION: ${{ vars.LOCATION || '01067' }}
           STORE_FILTER: ${{ vars.STORE_FILTER || 'Dresden' }}
           PARTS: ${{ vars.PARTS }}
+          PING_HOURS: ${{ vars.PING_HOURS }}
           DEBUG: ${{ inputs.debug && '1' || '0' }}
           TEST_PUSH: ${{ inputs.test_push && '1' || '0' }}
         run: python3 check_availability.py
+
+      - name: Browser-Tarnung für Händlerseiten installieren
+        if: ${{ always() && vars.RETAILER_URLS != '' }}
+        continue-on-error: true
+        run: pip install --quiet --disable-pip-version-check curl_cffi
+
+      - name: Händler prüfen (MediaMarkt, Saturn, Cyberport)
+        if: ${{ always() && vars.RETAILER_URLS != '' }}
+        continue-on-error: true
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          RETAILER_URLS: ${{ vars.RETAILER_URLS }}
+          DEBUG: ${{ inputs.debug && '1' || '0' }}
+        run: python3 check_retailers.py
 
       - name: Zustand speichern
         if: always()
