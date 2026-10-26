@@ -9,6 +9,7 @@ Konfiguration über Umgebungsvariablen (siehe README.md).
 Keine externen Abhängigkeiten, nur Python-Standardbibliothek.
 """
 
+import http.cookiejar
 import json
 import os
 import re
@@ -55,14 +56,40 @@ def log(msg: str) -> None:
     print(f"[{datetime.now(timezone.utc).strftime('%H:%M:%S')}Z] {msg}", flush=True)
 
 
-def http_get(url: str, accept: str, referer: str | None = None) -> str:
+COOKIES = http.cookiejar.CookieJar()
+OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(COOKIES))
+_page_cache: str | None = None
+
+
+def http_get(url: str, accept: str, referer: str | None = None, xhr: bool = False) -> str:
     headers = dict(HEADERS)
     headers["Accept"] = accept
     if referer:
         headers["Referer"] = referer
+    if xhr:
+        headers["X-Requested-With"] = "XMLHttpRequest"
+        headers["Sec-Fetch-Mode"] = "cors"
+        headers["Sec-Fetch-Site"] = "same-origin"
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return resp.read().decode("utf-8", errors="replace")
+    try:
+        with OPENER.open(req, timeout=20) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        try:
+            body = e.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            body = ""
+        log(f"HTTP {e.code} für {url.split('?')[0]} – Antwort: {body!r}")
+        raise
+
+
+def product_page() -> str:
+    """Lädt die Produktseite einmal pro Lauf (setzt dabei auch Session-Cookies)."""
+    global _page_cache
+    if _page_cache is None:
+        _page_cache = http_get(PRODUCT_URL, accept="text/html,application/xhtml+xml")
+        log(f"Produktseite geladen, {len(COOKIES)} Cookies erhalten.")
+    return _page_cache
 
 
 def load_state() -> dict:
@@ -113,7 +140,7 @@ PART_RE = re.compile(r"\b([A-Z0-9]{5}" + re.escape("ZD") + r"/A)\b") if COUNTRY 
 
 def discover_parts() -> list[str]:
     """Liest die Teilenummern aus der Apple-Produktseite (inkl. Zubehör – das wird später per Titel gefiltert)."""
-    html = http_get(PRODUCT_URL, accept="text/html,application/xhtml+xml")
+    html = product_page()
     html = html.replace("\\u002F", "/").replace("\\/", "/")
     parts = sorted(set(PART_RE.findall(html)))
     log(f"{len(parts)} Teilenummern auf der Produktseite gefunden.")
@@ -143,29 +170,74 @@ def get_parts(state: dict) -> list[str]:
 
 # --- Verfügbarkeit abfragen --------------------------------------------------
 
-def query_batch(parts: list[str]) -> dict:
-    params = {
-        "fae": "true",
-        "little": "false",
-        "mts.0": "regular",
-        "mts.1": "sticky",
-        "searchNearby": "true",
-        "location": LOCATION,
-    }
+PICKUP_URL = f"https://www.apple.com/{COUNTRY}/shop/retail/pickup-message"
+
+# Verschiedene Abfrageformen – Apple ändert diese gelegentlich.
+# (Name, URL, feste Parameter, Teile pro Anfrage)
+VARIANTS = [
+    ("fulfillment-voll", FULFILLMENT_URL,
+     {"fae": "true", "little": "false", "mts.0": "regular", "mts.1": "sticky",
+      "searchNearby": "true", "location": LOCATION}, 4),
+    ("fulfillment-einzeln", FULFILLMENT_URL,
+     {"fae": "true", "little": "false", "mts.0": "regular", "mts.1": "sticky",
+      "searchNearby": "true", "location": LOCATION}, 1),
+    ("fulfillment-minimal", FULFILLMENT_URL,
+     {"pl": "true", "mts.0": "regular", "location": LOCATION}, 1),
+    ("fulfillment-plz", FULFILLMENT_URL,
+     {"pl": "true", "mts.0": "regular", "mts.1": "compact", "searchNearby": "true",
+      "location": LOCATION}, 1),
+    ("pickup-message", PICKUP_URL,
+     {"pl": "true", "location": LOCATION}, 1),
+    ("pickup-message-multi", PICKUP_URL,
+     {"pl": "true", "cppart": "UNLOCKED/WW", "location": LOCATION}, 4),
+]
+
+
+def query_batch(parts: list[str], variant) -> dict:
+    name, base, fixed, _ = variant
+    params = dict(fixed)
     for i, p in enumerate(parts):
         params[f"parts.{i}"] = p
-    url = FULFILLMENT_URL + "?" + urllib.parse.urlencode(params)
-    raw = http_get(url, accept="application/json, text/plain, */*", referer=PRODUCT_URL)
+    url = base + "?" + urllib.parse.urlencode(params)
+    raw = http_get(url, accept="application/json, text/plain, */*", referer=PRODUCT_URL, xhr=True)
     if DEBUG:
-        log("Rohantwort (gekürzt):\n" + raw[:3000])
+        log(f"Rohantwort [{name}] (gekürzt):\n" + raw[:3000])
     return json.loads(raw)
+
+
+def find_variant(state: dict, parts: list[str]):
+    """Liefert die zuletzt funktionierende Variante oder probiert alle durch."""
+    order = list(VARIANTS)
+    saved = state.get("variant")
+    order.sort(key=lambda v: 0 if v[0] == saved else 1)
+    errors = []
+    for v in order:
+        try:
+            data = query_batch(parts[:v[3]], v)
+            if extract(data):
+                if v[0] != saved:
+                    log(f"Funktionierende Abfrage gefunden: {v[0]}")
+                state["variant"] = v[0]
+                return v, data
+            errors.append(f"{v[0]}: keine Store-Daten")
+            log(f"Variante {v[0]}: Antwort ohne Store-Daten.")
+        except urllib.error.HTTPError as e:
+            errors.append(f"{v[0]}: HTTP {e.code}")
+        except Exception as e:
+            errors.append(f"{v[0]}: {e}")
+            log(f"Variante {v[0]} fehlgeschlagen: {e}")
+        time.sleep(1.5)
+    raise RuntimeError("Keine Abfragevariante funktioniert – " + "; ".join(errors))
 
 
 def extract(data: dict) -> list[dict]:
     """Zieht (Store, Teil, Titel, Status) aus der Antwort."""
     out = []
-    content = (data.get("body") or {}).get("content") or {}
-    stores = (content.get("pickupMessage") or {}).get("stores") or []
+    body = data.get("body") or {}
+    content = body.get("content") or {}
+    stores = ((content.get("pickupMessage") or {}).get("stores")
+              or body.get("stores")            # Format von /retail/pickup-message
+              or [])
     for st in stores:
         store_name = st.get("storeName") or st.get("storeNumber") or "?"
         city = st.get("city") or ""
@@ -173,7 +245,8 @@ def extract(data: dict) -> list[dict]:
             regular = (pa.get("messageTypes") or {}).get("regular") or {}
             title = (regular.get("storePickupProductTitle")
                      or pa.get("storePickupProductTitle") or part)
-            quote = (pa.get("pickupSearchQuote") or regular.get("storePickupQuote") or "")
+            quote = (pa.get("pickupSearchQuote") or regular.get("storePickupQuote")
+                     or pa.get("storePickupQuote") or "")
             out.append({
                 "store": store_name,
                 "city": city,
@@ -210,11 +283,17 @@ def main() -> int:
         if not parts:
             raise RuntimeError("Keine Teilenummern bekannt (Produktseite nicht lesbar und PARTS nicht gesetzt).")
 
-        entries = []
-        for i in range(0, len(parts), BATCH_SIZE):
-            batch = parts[i:i + BATCH_SIZE]
-            entries.extend(extract(query_batch(batch)))
+        try:
+            product_page()  # Session-Cookies holen, wie ein echter Browser
+        except Exception as e:
+            log(f"Produktseite nicht ladbar (weiter ohne Cookies): {e}")
+
+        variant, first = find_variant(state, parts)
+        size = variant[3]
+        entries = extract(first)
+        for i in range(size, len(parts), size):
             time.sleep(1.5)
+            entries.extend(extract(query_batch(parts[i:i + size], variant)))
 
         if not entries:
             raise RuntimeError("Antwort enthielt keine Store-Daten – evtl. hat Apple das Format geändert.")
