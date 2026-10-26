@@ -371,6 +371,9 @@ def main() -> int:
             maybe_ping(state, len(stores_seen), len(available))
 
         state["available"] = sorted(available.keys())
+        state["last_status"] = [{"variant": e["title"], "store": f"{e['store']} ({e['city']})",
+                                 "status": e["display"] or "?"} for e in wanted]
+        state["last_error"] = None
         state["errors"] = 0
         state["last_ok"] = datetime.now(timezone.utc).isoformat()
 
@@ -409,6 +412,8 @@ def maybe_ping(state: dict, store_count: int, still_available: int) -> None:
 def handle_error(state: dict, msg: str) -> int:
     log(f"FEHLER: {msg}")
     state["errors"] = state.get("errors", 0) + 1
+    state["last_error"] = msg
+    state["last_error_at"] = datetime.now(timezone.utc).isoformat()
     n = state["errors"]
     # einmal nach ERROR_ALERT_AFTER Fehlern warnen, danach etwa einmal täglich (alle 192 Läufe)
     if n == ERROR_ALERT_AFTER or (n > ERROR_ALERT_AFTER and n % 192 == 0):

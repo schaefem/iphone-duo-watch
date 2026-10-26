@@ -44,4 +44,6 @@ TEST_PUSH=1 ./run.sh || true
 echo
 tail -n 40 logs/watch.log
 echo
+echo "-- Dashboard einrichten"
+bash "$DIR/install_dashboard.sh" || echo "Dashboard-Einrichtung fehlgeschlagen (Wächter läuft trotzdem)."
 echo "== Fertig. Log ansehen: tail -f $DIR/logs/watch.log =="

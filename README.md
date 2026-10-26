@@ -76,3 +76,12 @@ bash install.sh
 - Log live ansehen: `tail -f logs/watch.log`
 - Update: `git pull`
 - Cronjob ansehen/entfernen: `crontab -e`
+
+## Dashboard
+
+Webseite auf dem Pi: Status aller Varianten je Händler, letzte Läufe, Log, Buttons
+„Jetzt prüfen“ und „Test-Push“. Erreichbar unter `http://duowatch.local:8080`.
+
+- Einrichtung (läuft danach als Dienst, auch nach Neustart): `bash install_dashboard.sh`
+- Passwort setzen: in `config.env` `DASHBOARD_PASSWORD=…`, danach `sudo systemctl restart duowatch-dashboard`
+- Status/Neustart des Dienstes: `systemctl status duowatch-dashboard`

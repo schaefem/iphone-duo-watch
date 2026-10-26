@@ -424,6 +424,7 @@ def run_mms(shop: str, state: dict) -> None:
         time.sleep(1)
 
         available: dict[str, str] = {}
+        rows = []
         for sid in MMS_STORES[shop]:
             feats = mms_pickup(shop, pids, sid, referer)
             for f in feats:
@@ -431,6 +432,7 @@ def run_mms(shop: str, state: dict) -> None:
                 name = MMS_PRODUCTS.get(pid, pid)
                 disp, anywhere = f.get("displayStatus") or "?", f.get("pickupStatus") or "?"
                 log(f"{shop}: iPhone Duo {name:<20} Markt {sid}: {disp:<14} (überall: {anywhere})")
+                rows.append({"variant": name, "store": f"Markt {sid}", "status": disp, "anywhere": anywhere})
                 if status_means_available(disp):
                     available[f"{pid}@{sid}"] = f"{name} – in deinem Markt ({sid}) abholbar"
                 elif anywhere != "?" and "NOT_AVAILABLE" not in anywhere.upper():
@@ -443,11 +445,15 @@ def run_mms(shop: str, state: dict) -> None:
             push(f"🛒 {shop}: iPhone Duo abholbar!",
                  "\n".join(f"• {available[k]}" for k in new) + "\n\nSchnell auf der Seite reservieren.",
                  priority=5, tags=["shopping_cart"], click=mms_product_url(shop, first_pid))
+        state.setdefault("last_status", {})[shop] = {
+            "at": datetime.now(timezone.utc).isoformat(), "rows": rows, "error": None}
         entry.update(available=sorted(available), errors=0,
                      last_ok=datetime.now(timezone.utc).isoformat())
     except Exception as e:
         entry["errors"] = entry.get("errors", 0) + 1
         log(f"{shop}: FEHLER {e} (Fehlläufe in Folge: {entry['errors']})")
+        ls = state.setdefault("last_status", {}).setdefault(shop, {"rows": []})
+        ls.update(error=str(e), error_at=datetime.now(timezone.utc).isoformat())
         if entry["errors"] == ERROR_ALERT_AFTER:
             push(f"⚠️ {shop}-Abfrage klappt nicht", f"{entry['errors']} Fehlläufe in Folge: {e}",
                  priority=2, tags=["warning"])
@@ -470,7 +476,7 @@ def main() -> int:
         other_urls += [u for u in CYBERPORT_DEFAULT if u.lower() not in known]
     # Cyberport seltener prüfen (Schutz vor "zu viele Anfragen")
     cp_last = state.get("cyberport_last", 0)
-    cp_due = time.time() - cp_last >= CYBERPORT_EVERY_MIN * 60 - 30
+    cp_due = os.getenv("FORCE") == "1" or time.time() - cp_last >= CYBERPORT_EVERY_MIN * 60 - 30
     if any(shop_name(u) == "Cyberport" for u in other_urls):
         if cp_due:
             state["cyberport_last"] = time.time()
@@ -563,11 +569,16 @@ def main() -> int:
                     lines.append(f"Preis: {info['price']} €")
                 push(f"🛒 {shop}: iPhone Duo verfügbar!", "\n".join(lines),
                      priority=5, tags=["shopping_cart"], click=url)
+            state.setdefault("page_status", {})[url] = {
+                "shop": shop, "variant": info["name"], "online": online_txt, "store": store_txt,
+                "available": avail, "at": datetime.now(timezone.utc).isoformat(), "error": None}
             entry.update(available=avail, errors=0, name=info["name"],
                          last_ok=datetime.now(timezone.utc).isoformat())
         except Exception as e:
             entry["errors"] = entry.get("errors", 0) + 1
             log(f"{shop}: FEHLER {e} (Fehlläufe in Folge: {entry['errors']})")
+            ps = state.setdefault("page_status", {}).setdefault(url, {"shop": shop, "variant": entry.get("name")})
+            ps.update(error=str(e), error_at=datetime.now(timezone.utc).isoformat())
             if entry["errors"] == ERROR_ALERT_AFTER:
                 push(f"⚠️ {shop}-Abfrage klappt nicht",
                      f"{entry['errors']} Fehlläufe in Folge: {e}\n{url}",
