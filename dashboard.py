@@ -462,7 +462,7 @@ th small{display:block;color:var(--muted);font-weight:400}
 td.c{text-align:center}
 .pill{display:inline-block;min-width:72px;padding:3px 8px;border-radius:999px;font-size:13px;font-weight:600}
 .yes{background:var(--yes-bg);color:var(--yes)}.elsewhere{background:var(--else-bg);color:var(--else)}
-.no{background:var(--no-bg);color:var(--no)}.unknown{background:var(--unk-bg);color:var(--muted)}
+.no{background:var(--err-bg);color:var(--err)}.unknown{background:var(--unk-bg);color:var(--muted)}
 .meta{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:10px}
 .meta div{font-size:13px}.meta b{display:block;font-size:14px}
 .err{color:var(--err);font-size:12px;word-break:break-word}
@@ -476,8 +476,21 @@ pre{margin:0;max-height:420px;overflow:auto;font:12px/1.4 ui-monospace,Consolas,
 details.card>summary{cursor:pointer;font-weight:600;list-style:none}
 details.card>summary::-webkit-details-marker{display:none}
 details.card>summary:after{content:" ▸";color:var(--muted)}details.card[open]>summary:after{content:" ▾"}
-fieldset{border:1px solid var(--line);border-radius:10px;margin:14px 0 0;padding:10px 12px}
-legend{font-weight:600;padding:0 6px}
+details.sec{border:1px solid var(--line);border-radius:10px;margin:12px 0 0;background:var(--card)}
+details.sec>summary{cursor:pointer;list-style:none;padding:10px 12px;font-weight:600;display:flex;justify-content:space-between}
+details.sec>summary::-webkit-details-marker{display:none}
+details.sec>summary:after{content:"▸";color:var(--muted)}details.sec[open]>summary:after{content:"▾"}
+details.sec[open]>summary{border-bottom:1px solid var(--line)}
+.secbody{padding:4px 12px 12px}
+#toasts{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;
+z-index:50;width:min(420px,calc(100% - 32px));pointer-events:none}
+.toast{pointer-events:auto;display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:10px;
+font-size:14px;box-shadow:0 6px 24px rgba(0,0,0,.18);border:1px solid var(--line);background:var(--card);color:var(--text);
+animation:tin .2s ease-out}
+.toast.ok{border-left:5px solid var(--yes)}.toast.err{border-left:5px solid var(--err)}.toast.info{border-left:5px solid var(--accent)}
+.toast .x{margin-left:auto;cursor:pointer;color:var(--muted);border:0;background:none;padding:0 2px;font-size:16px;line-height:1}
+.toast.out{opacity:0;transform:translateY(8px);transition:all .25s}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
 label{display:block;margin:8px 0 4px;font-size:13px;color:var(--muted)}
 input[type=text],input[type=number],select{font:inherit;width:100%;max-width:320px;padding:7px 9px;border:1px solid var(--line);
 border-radius:8px;background:var(--bg);color:var(--text)}
@@ -493,30 +506,30 @@ table{min-width:0}th,td{padding:7px 3px;font-size:13px}th small{font-size:11px}
 <header><div><h1>📱 iPhone-Duo-Wächter</h1><div class="muted" id="now"></div></div>
 <div class="btns"><button class="primary" id="run">Jetzt prüfen</button>
 <button id="test">Test-Push</button><button id="refresh">Aktualisieren</button></div></header>
-<div id="msg"></div>
+<div id="toasts" aria-live="polite"></div>
 <div id="banner"></div>
 <div class="card"><div class="status" id="sched"></div></div>
 <div class="card"><div class="tablewrap"><table id="tbl"></table></div>
-<div class="muted" style="margin-top:8px">Grün = abholbar · Gelb = in einem anderen Markt abholbar · Grau = nicht verfügbar · Hell = keine Daten</div></div>
+<div class="muted" style="margin-top:8px">Grün = abholbar · Gelb = in einem anderen Markt abholbar · Rot = nicht verfügbar · Hell = keine Daten</div></div>
 <div class="card"><div class="meta" id="meta"></div></div>
 <details class="card" id="setbox"><summary>⚙️ Einstellungen</summary>
-<fieldset><legend>Zeitplan</legend>
+<details class="sec" data-k="zeitplan"><summary>🕒 Zeitplan</summary><div class="secbody">
 <label class="chk"><input type="checkbox" id="s_enabled"> Überwachung aktiv (automatische Prüfungen)</label>
 <div class="row">
 <div><label>Takt</label><select id="s_every"><option>1</option><option>2</option><option>3</option><option selected>5</option><option>10</option><option>15</option><option>20</option><option>30</option></select></div>
 <div><label>von (Uhr)</label><input type="number" id="s_from" min="0" max="23" style="width:90px"></div>
 <div><label>bis (Uhr)</label><input type="number" id="s_to" min="1" max="24" style="width:90px"></div>
 </div><div class="hint">Takt in Minuten. „bis 22“ heißt: letzter Lauf um 21:55 Uhr.</div>
-<button class="save" id="save_sched">Zeitplan speichern</button></fieldset>
+<button class="save primary" id="save_sched">Zeitplan speichern</button></div></details>
 
-<fieldset><legend>Apple Stores</legend>
+<details class="sec" data-k="apple"><summary>🍏 Apple Stores</summary><div class="secbody">
 <label class="chk"><input type="checkbox" id="a_all"> Alle Apple Stores in Deutschland</label>
 <div id="a_list" class="stores"></div>
 <div class="hint" id="a_hint"></div>
 <div class="btns save"><button id="a_load">Store-Liste von Apple laden</button><button id="a_save" class="primary">Auswahl speichern</button></div>
-</fieldset>
+</div></details>
 
-<fieldset><legend>Händler</legend>
+<details class="sec" data-k="haendler"><summary>🛒 Händler</summary><div class="secbody">
 <label class="chk"><input type="checkbox" id="m_mm"> MediaMarkt prüfen</label>
 <label class="chk"><input type="checkbox" id="m_sat"> Saturn prüfen</label>
 <div class="row">
@@ -525,16 +538,15 @@ table{min-width:0}th,td{padding:7px 3px;font-size:13px}th small{font-size:11px}
 </div><div class="hint">Mehrere mit Komma. Die ID steht im Browser-Cookie <code>MC_OUTLET_ID</code>, nachdem du auf der Shopseite einen Markt gewählt hast.</div>
 <label class="chk" style="margin-top:12px"><input type="checkbox" id="CYBERPORT"> Cyberport prüfen</label>
 <div><label>Cyberport-Takt (Minuten)</label><input type="number" id="CYBERPORT_EVERY_MIN" min="5" max="240" style="width:110px"></div>
-</fieldset>
+<button class="save primary save_set">Händler speichern</button></div></details>
 
-<fieldset><legend>Benachrichtigung</legend>
+<details class="sec" data-k="push"><summary>🔔 Benachrichtigung</summary><div class="secbody">
 <div class="row">
 <div><label>ntfy-Thema</label><input type="text" id="NTFY_TOPIC"></div>
 <div><label>Lebenszeichen alle … Stunden (0 = aus)</label><input type="number" id="PING_HOURS" min="0" max="24" step="0.5" style="width:110px"></div>
 </div>
 <label class="chk" style="margin-top:12px"><input type="checkbox" id="DEBUG"> Ausführliches Log (Debug)</label>
-</fieldset>
-<button class="save primary" id="save_set">Einstellungen speichern</button>
+<button class="save primary save_set">Benachrichtigung speichern</button></div></details>
 </details>
 
 <div class="card"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -543,6 +555,14 @@ table{min-width:0}th,td{padding:7px 3px;font-size:13px}th small{font-size:11px}
 <script>
 const $=id=>document.getElementById(id);
 const label={yes:"abholbar",elsewhere:"anderswo",no:"nein",unknown:"–"};
+function toast(text,kind="ok",ms=4500){
+  const t=document.createElement("div");t.className="toast "+kind;
+  t.innerHTML=`<span>${kind==="ok"?"✅":kind==="err"?"⚠️":"⏳"}</span><span>${esc(text)}</span><button class="x" aria-label="Schließen">×</button>`;
+  const close=()=>{t.classList.add("out");setTimeout(()=>t.remove(),260)};
+  t.querySelector(".x").onclick=close;$("toasts").appendChild(t);
+  if(ms) setTimeout(close,ms);
+  return close;
+}
 function esc(s){return String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]))}
 async function load(){
   try{
@@ -575,11 +595,10 @@ async function load(){
     const lg=await (await fetch("api/log",{cache:"no-store"})).text();
     const p=$("log"),atEnd=p.scrollTop+p.clientHeight>=p.scrollHeight-20;
     p.textContent=lg; if(atEnd) p.scrollTop=p.scrollHeight;
-  }catch(e){$("msg").textContent="Fehler beim Laden: "+e}
+  }catch(e){if(!window._lerr){window._lerr=1;toast("Dashboard nicht erreichbar: "+e,"err",8000);setTimeout(()=>window._lerr=0,30000)}}
 }
 async function post(path){
-  $("msg").textContent="…";
-  const r=await fetch(path,{method:"POST"});$("msg").textContent=await r.text();
+  const r=await fetch(path,{method:"POST"});toast(await r.text(),r.ok?"ok":"err");
   setTimeout(load,1500);
 }
 let stores=[];
@@ -604,29 +623,38 @@ async function loadSettings(){
   renderStores(sel);
 }
 async function send(path,obj,reload=true){
-  $("msg").textContent="…";
   const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(obj)});
-  $("msg").textContent=await r.text();
+  toast(await r.text(),r.ok?"ok":"err",r.ok?4500:9000);
   if(r.ok&&reload){loadSettings();load()}
 }
 $("a_all").onchange=()=>renderStores(new Set([...document.querySelectorAll(".a_store:checked")].map(c=>stores.find(x=>x.number===c.value)?.name)));
 $("a_load").onclick=async()=>{
-  $("a_load").disabled=true;$("msg").textContent="Frage Apple nach allen Stores … (ca. 15 Sekunden)";
+  $("a_load").disabled=true;const busy=toast("Frage Apple nach allen Stores … (ca. 15 Sekunden)","info",0);
   const r=await fetch("api/apple-discover",{method:"POST"});
-  if(r.ok){stores=await r.json();$("msg").textContent=stores.length+" Apple Stores gefunden.";
+  busy();
+  if(r.ok){stores=await r.json();toast(stores.length+" Apple Stores gefunden – jetzt auswählen und speichern.","ok");
     renderStores(new Set([...document.querySelectorAll(".a_store:checked")].map(c=>c.parentElement.textContent.split(" – ")[1])))}
-  else $("msg").textContent=await r.text();
+  else toast(await r.text(),"err",9000);
   $("a_load").disabled=false;
 };
 $("a_save").onclick=()=>send("api/apple-selection",{all:$("a_all").checked,stores:[...document.querySelectorAll(".a_store:checked")].map(c=>c.value)});
 $("save_sched").onclick=()=>send("api/schedule",{enabled:$("s_enabled").checked,every:+$("s_every").value,from:+$("s_from").value,to:+$("s_to").value});
-$("save_set").onclick=()=>{
+const saveSet=()=>{
   const shops=[$("m_mm").checked?"MediaMarkt":"",$("m_sat").checked?"Saturn":""].filter(Boolean).join(",");
   send("api/settings",{MEDIAMARKT_STORES:$("MEDIAMARKT_STORES").value.replace(/\s/g,""),SATURN_STORES:$("SATURN_STORES").value.replace(/\s/g,""),
     MMS_SHOPS:shops,CYBERPORT:$("CYBERPORT").checked?"1":"0",CYBERPORT_EVERY_MIN:$("CYBERPORT_EVERY_MIN").value,
     NTFY_TOPIC:$("NTFY_TOPIC").value.trim(),PING_HOURS:$("PING_HOURS").value,DEBUG:$("DEBUG").checked?"1":"0"});
 };
+document.querySelectorAll(".save_set").forEach(b=>b.onclick=saveSet);
+// Auf-/Zuklappzustand merken (pro Browser)
+function remember(el,key){
+  try{if(localStorage.getItem(key)==="1")el.open=true}catch(e){}
+  el.addEventListener("toggle",()=>{try{localStorage.setItem(key,el.open?"1":"0")}catch(e){}});
+}
+remember($("setbox"),"dw_set");
+document.querySelectorAll("details.sec").forEach(d=>remember(d,"dw_sec_"+d.dataset.k));
 $("setbox").addEventListener("toggle",()=>{if($("setbox").open)loadSettings()});
+if($("setbox").open)loadSettings();
 $("run").onclick=()=>post("api/run");$("test").onclick=()=>post("api/test-push");$("refresh").onclick=load;
 load();setInterval(load,15000);
 </script></body></html>"""
