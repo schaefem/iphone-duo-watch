@@ -85,3 +85,7 @@ Webseite auf dem Pi: Status aller Varianten je Händler, letzte Läufe, Log, But
 - Einrichtung (läuft danach als Dienst, auch nach Neustart): `bash install_dashboard.sh`
 - Passwort setzen: in `config.env` `DASHBOARD_PASSWORD=…`, danach `sudo systemctl restart duowatch-dashboard`
 - Status/Neustart des Dienstes: `systemctl status duowatch-dashboard`
+- Oben zeigt die Seite, ob die Überwachung aktiv ist (Cronjob, letzter/nächster Lauf, überfällig?).
+- Unter „Einstellungen“: Zeitplan (pausieren, Takt, Zeitfenster), Apple Stores per Häkchen
+  (Liste live von Apple laden), Markt-IDs, Cyberport, ntfy-Thema, Lebenszeichen. Änderungen landen in
+  `config.env` bzw. in der crontab und gelten ab dem nächsten Lauf.

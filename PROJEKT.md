@@ -75,7 +75,7 @@ Preise DE: 2.299 / 2.549 / 3.049 / 3.799 €.
 | `check_retailers.py` | MediaMarkt/Saturn/Cyberport (`curl_cffi`) |
 | `run.sh` | startet beide nacheinander, Lock, Log (`logs/watch.log`, max. 5000 Zeilen) |
 | `install.sh` | Pi-Einrichtung: venv + curl_cffi, Zeitzone, `config.env`, Cronjob `*/5 6-21 * * *`, Testlauf |
-| `dashboard.py` | Web-Dashboard (Port 8080): Statusmatrix, Log, „Jetzt prüfen“, „Test-Push“; optional Passwort |
+| `dashboard.py` | Web-Dashboard (Port 8080): Statusmatrix, Cron-Status (letzter/nächster Lauf, überfällig), Einstellungen (Zeitplan, Apple-Stores per Liste, Markt-IDs, Cyberport, ntfy), Log, „Jetzt prüfen“, „Test-Push“; optional Passwort |
 | `install_dashboard.sh` | richtet das Dashboard als systemd-Dienst `duowatch-dashboard` ein |
 | `config.env.example` | Einstellungen (Vorlage; echte `config.env` nur auf dem Pi, nicht im Repo) |
 | `.github/workflows/iphone-duo-watch.yml` | alter GitHub-Workflow (zu deaktivieren) |

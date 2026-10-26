@@ -190,7 +190,8 @@ MMS_PRODUCTS = {
 _ids_env = [x.strip() for x in (os.getenv("MMS_PRODUCT_IDS") or "").split(",") if x.strip()]
 if _ids_env:
     MMS_PRODUCTS = {i: MMS_PRODUCTS.get(i, f"Produkt {i}") for i in _ids_env}
-MMS_SHOPS = [x.strip() for x in (os.getenv("MMS_SHOPS") or "MediaMarkt,Saturn").split(",") if x.strip()]
+_mms_env = os.getenv("MMS_SHOPS")   # leer = beide aus, nicht gesetzt = beide an
+MMS_SHOPS = [x.strip() for x in (_mms_env if _mms_env is not None else "MediaMarkt,Saturn").split(",") if x.strip()]
 MMS_URL_SLUG = {
     "3071630": "256gb-star-white", "3071631": "256gb-night-sky", "3071632": "512gb-star-white",
     "3071633": "512gb-night-sky", "3071634": "1tb-star-white", "3071635": "1tb-night-sky",
