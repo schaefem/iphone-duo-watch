@@ -1,0 +1,51 @@
+name: iPhone Duo Wächter
+
+on:
+  schedule:
+    # Alle 5 Minuten zwischen ca. 6 und 22 Uhr deutscher Zeit (Cron läuft in UTC)
+    - cron: "*/5 5-20 * * *"
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: "Rohantwort von Apple ins Log schreiben"
+        type: boolean
+        default: true
+      test_push:
+        description: "Test-Push an ntfy senden"
+        type: boolean
+        default: true
+
+concurrency:
+  group: iphone-duo-watch
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zustand laden
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: watch-state-${{ github.run_id }}
+          restore-keys: watch-state-
+
+      - name: Verfügbarkeit prüfen
+        env:
+          NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
+          LOCATION: ${{ vars.LOCATION || '01067' }}
+          STORE_FILTER: ${{ vars.STORE_FILTER || 'Dresden' }}
+          PARTS: ${{ vars.PARTS }}
+          DEBUG: ${{ inputs.debug && '1' || '0' }}
+          TEST_PUSH: ${{ inputs.test_push && '1' || '0' }}
+        run: python3 check_availability.py
+
+      - name: Zustand speichern
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: watch-state-${{ github.run_id }}
