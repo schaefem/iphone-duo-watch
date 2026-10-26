@@ -103,6 +103,42 @@ def avail_mms(status: str) -> bool:
     return "AVAILABLE" in s and not any(x in s for x in ("NOT", "UNAVAILABLE"))
 
 
+def system_info() -> dict:
+    """Temperatur, Unterspannung/Drosselung und Laufzeit des Pi."""
+    info = {"temp": None, "throttle": None, "uptime": None, "disk_free": None}
+    try:
+        with open("/sys/class/thermal/thermal_zone0/temp") as f:
+            info["temp"] = round(int(f.read().strip()) / 1000, 1)
+    except Exception:
+        pass
+    try:
+        r = subprocess.run(["vcgencmd", "get_throttled"], capture_output=True, text=True, timeout=5)
+        val = int(r.stdout.strip().split("=")[1], 16)
+        now, past = [], []
+        for bit, txt in ((0, "Unterspannung"), (1, "Takt begrenzt"), (2, "gedrosselt"), (3, "Temperaturlimit")):
+            if val & (1 << bit):
+                now.append(txt)
+            if val & (1 << (bit + 16)):
+                past.append(txt)
+        info["throttle"] = {"now": now, "past": past}
+    except Exception:
+        pass
+    try:
+        with open("/proc/uptime") as f:
+            sec = int(float(f.read().split()[0]))
+        d, rest = divmod(sec, 86400)
+        h, rest = divmod(rest, 3600)
+        info["uptime"] = (f"{d} T. " if d else "") + (f"{h} Std. " if d or h else "") + f"{rest // 60} Min."
+    except Exception:
+        pass
+    try:
+        import shutil
+        info["disk_free"] = round(shutil.disk_usage(DIR).free / 1e9, 1)
+    except Exception:
+        pass
+    return info
+
+
 def apple_sub(f: str) -> str:
     if f.strip() == "*":
         return "alle Stores"
@@ -191,7 +227,7 @@ def build_status() -> dict:
     any_hit = any(c["state"] in ("yes", "elsewhere") for r in rows for c in r["cells"])
     sched = read_schedule()
     return {
-        "schedule": sched, "next_run": next_run(sched), "run": run_info(sched),
+        "schedule": sched, "next_run": next_run(sched), "run": run_info(sched), "system": system_info(),
         "now": datetime.now(TZ).strftime("%d.%m.%Y %H:%M:%S"),
         "running": is_running(),
         "any_hit": any_hit,
@@ -508,7 +544,8 @@ table{min-width:0}th,td{padding:7px 3px;font-size:13px}th small{font-size:11px}
 <button id="test">Test-Push</button><button id="refresh">Aktualisieren</button></div></header>
 <div id="toasts" aria-live="polite"></div>
 <div id="banner"></div>
-<div class="card"><div class="status" id="sched"></div></div>
+<div class="card"><div class="status" id="sched"></div>
+<div class="status" id="sys" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--line)"></div></div>
 <div class="card"><div class="tablewrap"><table id="tbl"></table></div>
 <div class="muted" style="margin-top:8px">Grün = abholbar · Gelb = in einem anderen Markt abholbar · Rot = nicht verfügbar · Hell = keine Daten</div></div>
 <div class="card"><div class="meta" id="meta"></div></div>
@@ -580,6 +617,15 @@ async function load(){
       (sc.installed?`<div class="muted">alle ${sc.every} Min. · ${sc.from}–${sc.to} Uhr</div>`:"")+
       `<div class="muted">Letzter Lauf: ${lr}</div><div class="muted">Letzter automatischer: ${esc(ri.cron_last||"–")}</div>`+
       `<div class="muted">Nächster: ${esc(s.next_run)}</div>`;
+    const sy=s.system||{};let sh="";
+    if(sy.temp!=null){const tc=sy.temp>=70?"bad":sy.temp>=60?"warn":"ok";
+      sh+=`<div><span class="dot ${tc}"></span><b>${sy.temp.toFixed(1).replace(".",",")} °C</b> <span class="muted">CPU-Temperatur</span></div>`}
+    const th=sy.throttle;
+    if(th&&th.now.length) sh+=`<div class="err">⚡ Aktuell: ${esc(th.now.join(", "))} – Netzteil/Kühlung prüfen</div>`;
+    else if(th&&th.past.length) sh+=`<div class="muted">⚠️ Seit dem Start aufgetreten: ${esc(th.past.join(", "))}</div>`;
+    if(sy.uptime) sh+=`<div class="muted">Läuft seit ${esc(sy.uptime)}</div>`;
+    if(sy.disk_free!=null) sh+=`<div class="muted">Speicher frei: ${String(sy.disk_free).replace(".",",")} GB</div>`;
+    $("sys").innerHTML=sh||'<div class="muted">Keine Systemdaten verfügbar</div>';
     $("run").disabled=$("test").disabled=s.running;
     $("banner").innerHTML=s.any_hit?'<div class="banner hit">🎉 Mindestens eine Variante ist abholbar – schnell reservieren!</div>'
       :(s.running?'<div class="banner run">⏳ Prüfung läuft gerade …</div>':"");
