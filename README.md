@@ -59,3 +59,20 @@ Unter Settings → Secrets and variables → Actions → *Variables*:
 - Benachrichtigt wird nur bei **neuer** Verfügbarkeit, nicht bei jedem Lauf.
 - Apple-Stores bekommen Ware oft frühmorgens. Bei einem Treffer direkt über die
   Apple Store App „Abholen“ wählen, das geht schneller als hinfahren.
+
+## Dauerbetrieb auf dem Raspberry Pi (empfohlen)
+
+MediaMarkt, Saturn und Cyberport blocken Rechenzentren (GitHub, Hetzner) – deshalb laufen
+alle Wächter auf einem Raspberry Pi am privaten Anschluss.
+
+```bash
+sudo apt install -y git
+git clone https://github.com/<dein-name>/iphone-duo-watch.git
+cd iphone-duo-watch
+bash install.sh
+```
+
+- Einstellungen: `nano config.env` (wird nicht ins Repo hochgeladen)
+- Log live ansehen: `tail -f logs/watch.log`
+- Update: `git pull`
+- Cronjob ansehen/entfernen: `crontab -e`

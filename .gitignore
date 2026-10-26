@@ -1,0 +1,8 @@
+config.env
+state/
+logs/
+.venv/
+.lock
+__pycache__/
+debug_*.html
+ausgabe.txt
