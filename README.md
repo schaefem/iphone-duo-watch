@@ -37,8 +37,9 @@ Unter Settings → Secrets and variables → Actions → *Variables*:
 
 | Variable       | Standard  | Zweck |
 |----------------|-----------|-------|
-| `LOCATION`     | `01067`   | PLZ für die Store-Suche |
-| `STORE_FILTER` | `Dresden` | Kommagetrennte Stadt-/Storenamen, z. B. `Dresden,Leipzig` |
+| `STORE_FILTER` | `Dresden` | Kommagetrennte Stadt-/Storenamen, z. B. `Dresden,Berlin` – oder `*` für **alle Apple Stores in Deutschland** |
+| `LOCATION`     | `01067`   | PLZ für die Store-Suche. Bei `STORE_FILTER=*` wird automatisch quer durch Deutschland gesucht. Eigene Liste möglich: `01067,10117,80331` |
+| `PING_HOURS`   | `3`       | Lebenszeichen alle X Stunden, wenn nichts gefunden wurde (`0` = aus) |
 | `PARTS`        | (leer)    | Feste Teilenummern, falls die automatische Erkennung nicht klappt, z. B. `MABC1ZD/A,MABC2ZD/A` |
 
 ## Wenn es nicht klappt
